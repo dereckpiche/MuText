@@ -929,6 +929,15 @@
 			<key>requirement</key>
 			<string>cdhash H"157ef3c8347ce7cb4927a4e49b2a5865e8200b39"</string>
 		</dict>
+		<key>Frameworks/lib-dynload/_ctypes.cpython-313-darwin.so</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			NaRB7U1RrCLKjNVIHHsrLJL9/KI=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"35a441ed4d51ac22ca8cd5481c7b2b2c92fdfca2"</string>
+		</dict>
 		<key>Frameworks/lib-dynload/_datetime.cpython-313-darwin.so</key>
 		<dict>
 			<key>cdhash</key>
@@ -1073,6 +1082,15 @@
 			<key>requirement</key>
 			<string>cdhash H"1fcc644c2f950d07c833b95b91ae9e2e0ec8d2b4"</string>
 		</dict>
+		<key>Frameworks/lib-dynload/_ssl.cpython-313-darwin.so</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			RK+kGfjbAFsIdXh3fWhmibNskSE=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"44afa419f8db005b087578777d686689b36c9121"</string>
+		</dict>
 		<key>Frameworks/lib-dynload/_statistics.cpython-313-darwin.so</key>
 		<dict>
 			<key>cdhash</key>
@@ -1189,6 +1207,15 @@
 			</data>
 			<key>requirement</key>
 			<string>cdhash H"204cc77d83c95d5995b5ebe79518c2261f3a2616"</string>
+		</dict>
+		<key>Frameworks/libssl.3.dylib</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			3Wks7nw/n328pzpUjYj5N1GUYJI=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"dd692cee7c3f9f7dbca73a548d88f93751946092"</string>
 		</dict>
 		<key>Frameworks/tcl8</key>
 		<dict>
@@ -2547,6 +2574,11 @@
 		<dict>
 			<key>symlink</key>
 			<string>../Frameworks/libcrypto.3.dylib</string>
+		</dict>
+		<key>Resources/libssl.3.dylib</key>
+		<dict>
+			<key>symlink</key>
+			<string>../Frameworks/libssl.3.dylib</string>
 		</dict>
 		<key>Resources/tcl8/8.4/platform-1.0.19.tm</key>
 		<dict>
