@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import webbrowser
 import os
 import sys
@@ -17,6 +17,8 @@ class MuText:
     3) Ask for confirmation when opening a recent file.
     4) Dark mode setting (background dark grey, not black).
     5) Shortcut for "Save As" (Command+Shift+S).
+    6) Optional autosave with configurable interval.
+    7) Prompt when closing unsaved files.
     """
 
     CONFIG_NAME = "config.json"
@@ -38,6 +40,10 @@ class MuText:
         self.server_thread = None
         self.live_preview_port = 8000
         self.dark_mode = False  # Dark mode is off by default
+        self.autosave_enabled = False
+        self.autosave_interval = 60  # Autosave every 60 seconds
+        self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
+        self.unsaved_changes = False
 
         # Load settings from config file
         self.load_config()
@@ -55,6 +61,9 @@ class MuText:
         self.text_area.configure(insertofftime=0)  # Prevent cursor blinking
         self.apply_theme()
 
+        # Detect unsaved changes
+        self.text_area.bind("<Key>", self.mark_unsaved)
+
         # Bind keyboard shortcuts
         self.text_area.bind_all("<Command-o>", self.open_file)
         self.text_area.bind_all("<Command-s>", self.save_file)
@@ -65,6 +74,7 @@ class MuText:
         self.text_area.bind_all("<Command-equal>", self.increase_font_size)  # For Cmd+=
         self.text_area.bind_all("<Command-0>", self.reset_font_size)
         self.text_area.bind_all("<Command-n>", self.new_file)
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
 
         # Create menu bar
         self.menu_bar = tk.Menu(self.root)
@@ -92,6 +102,13 @@ class MuText:
         view_menu.add_command(label="Toggle Dark Mode", command=self.toggle_dark_mode)
         self.menu_bar.add_cascade(label="View", menu=view_menu)
 
+        # Autosave menu
+        autosave_menu = tk.Menu(self.menu_bar, tearoff=0)
+        autosave_menu.add_command(label="Enable Autosave", command=self.enable_autosave)
+        autosave_menu.add_command(label="Disable Autosave", command=self.disable_autosave)
+        autosave_menu.add_command(label="Set Autosave Interval", command=self.set_autosave_interval)
+        self.menu_bar.add_cascade(label="Autosave", menu=autosave_menu)
+
         # Render menu
         render_menu = tk.Menu(self.menu_bar, tearoff=0)
         render_menu.add_command(label="Render HTML", command=self.render_html, accelerator="Command+R")
@@ -102,6 +119,10 @@ class MuText:
         help_menu.add_command(label="About", command=self.show_about)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
 
+        # Start autosave if enabled
+        if self.autosave_enabled:
+            self.start_autosave()
+
     def load_config(self):
         if os.path.exists(self.config_file_path):
             try:
@@ -110,10 +131,14 @@ class MuText:
                     self.default_open_folder = config.get("default_open_folder", "./")
                     self.recent_files = config.get("recent_files", [])
                     self.dark_mode = config.get("dark_mode", False)
+                    self.autosave_enabled = config.get("autosave_enabled", False)
+                    self.autosave_interval = config.get("autosave_interval", 60)
             except json.JSONDecodeError:
                 self.default_open_folder = "./"
                 self.recent_files = []
                 self.dark_mode = False
+                self.autosave_enabled = False
+                self.autosave_interval = 60
         else:
             self.save_config()
 
@@ -121,10 +146,56 @@ class MuText:
         config = {
             "default_open_folder": self.default_open_folder,
             "recent_files": self.recent_files[:10],
-            "dark_mode": self.dark_mode
+            "dark_mode": self.dark_mode,
+            "autosave_enabled": self.autosave_enabled,
+            "autosave_interval": self.autosave_interval,
         }
         with open(self.config_file_path, "w") as config_file:
             json.dump(config, config_file)
+
+    def mark_unsaved(self, event=None):
+        self.unsaved_changes = True
+
+    def enable_autosave(self):
+        self.autosave_enabled = True
+        self.save_config()
+        self.start_autosave()
+
+    def disable_autosave(self):
+        self.autosave_enabled = False
+        self.save_config()
+
+    def set_autosave_interval(self):
+        interval = simpledialog.askinteger("Set Autosave Interval", "Enter interval in seconds:", minvalue=1)
+        if interval:
+            self.autosave_interval = interval
+            self.save_config()
+
+    def autosave(self):
+        if self.autosave_enabled:
+            if self.current_file:
+                try:
+                    with open(self.current_file, "w", encoding="utf-8") as file:
+                        file.write(self.text_area.get(1.0, tk.END))
+                except Exception as e:
+                    print(f"Autosave failed: {e}")
+            else:
+                try:
+                    with open(self.autosave_file_path, "w", encoding="utf-8") as file:
+                        file.write(self.text_area.get(1.0, tk.END))
+                except Exception as e:
+                    print(f"Autosave failed: {e}")
+            self.root.after(self.autosave_interval * 1000, self.autosave)
+
+    def start_autosave(self):
+        self.autosave()
+
+    def exit_editor(self):
+        if self.unsaved_changes:
+            if not messagebox.askyesno("Unsaved Changes", "You have unsaved changes. Do you want to exit without saving?"):
+                return
+        self.save_config()
+        self.root.destroy()
 
     def update_recent_files_menu(self):
         self.recent_files_menu.delete(0, tk.END)
@@ -249,8 +320,16 @@ class MuText:
         webbrowser.open(f"http://localhost:{self.live_preview_port}")
 
     def exit_editor(self):
-        if messagebox.askokcancel("Exit", "Are you sure you want to exit?"):
-            self.save_config()
+            if self.unsaved_changes:
+                choice = messagebox.askyesnocancel(
+                    "Unsaved Changes",
+                    "You have unsaved changes. Do you want to save them before exiting?"
+                )
+                if choice:  # Yes, save changes
+                    self.save_file()
+                    self.root.destroy()
+                elif choice is None:  # Cancel
+                    return
             self.root.destroy()
 
     def show_about(self):
