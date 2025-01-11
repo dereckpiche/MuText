@@ -5,9 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Variables
-SCRIPT_NAME="letterlock.py"
-APP_NAME="LetterLock"
-ICON_NAME="letterlock.icns" # macOS requires .icns files for icons
+SCRIPT_NAME="mutext.py"
+APP_NAME="MuText"
+ICON_NAME="mutext.icns" # macOS requires .icns files for icons
 
 # Check if PyInstaller is installed
 if ! command -v pyinstaller &> /dev/null; then
