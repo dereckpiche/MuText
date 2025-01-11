@@ -56,14 +56,15 @@ class MuText:
         self.apply_theme()
 
         # Bind keyboard shortcuts
-        self.root.bind("<Command-o>", self.open_file)
-        self.root.bind("<Command-s>", self.save_file)
-        self.root.bind("<Command-Shift-S>", self.save_as_file)
-        self.root.bind("<Command-r>", self.render_html)
-        self.root.bind("<Command-minus>", self.decrease_font_size)
-        self.root.bind("<Command-+>", self.increase_font_size)
-        self.root.bind("<Command-equal>", self.increase_font_size)  # For Cmd+=
-        self.root.bind("<Command-0>", self.reset_font_size)
+        self.text_area.bind_all("<Command-o>", self.open_file)
+        self.text_area.bind_all("<Command-s>", self.save_file)
+        self.text_area.bind_all("<Command-Shift-S>", self.save_as_file)
+        self.text_area.bind_all("<Command-r>", self.render_html)
+        self.text_area.bind_all("<Command-minus>", self.decrease_font_size)
+        self.text_area.bind_all("<Command-+>", self.increase_font_size)
+        self.text_area.bind_all("<Command-equal>", self.increase_font_size)  # For Cmd+=
+        self.text_area.bind_all("<Command-0>", self.reset_font_size)
+        self.text_area.bind_all("<Command-n>", self.new_file)
 
         # Create menu bar
         self.menu_bar = tk.Menu(self.root)
@@ -71,7 +72,7 @@ class MuText:
 
         # File menu
         file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        file_menu.add_command(label="New", command=self.new_file)
+        file_menu.add_command(label="New", command=self.new_file, accelerator="Command+N")
         file_menu.add_command(label="Open", command=self.open_file, accelerator="Command+O")
         file_menu.add_command(label="Save", command=self.save_file, accelerator="Command+S")
         file_menu.add_command(label="Save As", command=self.save_as_file, accelerator="Command+Shift+S")
@@ -102,10 +103,6 @@ class MuText:
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
 
     def load_config(self):
-        """
-        Load configuration from the JSON file.
-        If it does not exist, default values will be used.
-        """
         if os.path.exists(self.config_file_path):
             try:
                 with open(self.config_file_path, "r") as config_file:
@@ -118,24 +115,18 @@ class MuText:
                 self.recent_files = []
                 self.dark_mode = False
         else:
-            self.save_config()  # Create config file with defaults
+            self.save_config()
 
     def save_config(self):
-        """
-        Save configuration to the JSON file.
-        """
         config = {
             "default_open_folder": self.default_open_folder,
-            "recent_files": self.recent_files[:10],  # Keep up to the last 10 files
+            "recent_files": self.recent_files[:10],
             "dark_mode": self.dark_mode
         }
         with open(self.config_file_path, "w") as config_file:
             json.dump(config, config_file)
 
     def update_recent_files_menu(self):
-        """
-        Update the Recent Files submenu with the latest list of recent files.
-        """
         self.recent_files_menu.delete(0, tk.END)
         if self.recent_files:
             for file in self.recent_files:
@@ -147,27 +138,18 @@ class MuText:
             self.recent_files_menu.add_command(label="No recent files", state=tk.DISABLED)
 
     def add_to_recent_files(self, file_path):
-        """
-        Add a file to the recent files list and save config.
-        """
         if file_path in self.recent_files:
             self.recent_files.remove(file_path)
         self.recent_files.insert(0, file_path)
         self.update_recent_files_menu()
         self.save_config()
 
-    def new_file(self):
-        """
-        Start a new file, clearing the editor.
-        """
+    def new_file(self, event=None):
         self.text_area.delete(1.0, tk.END)
         self.current_file = None
         self.root.title("New File - MuText")
 
     def open_file(self, event=None, file_path=None):
-        """
-        Open a file. If file_path is None, prompt the user with a file dialog.
-        """
         if not file_path:
             file_path = filedialog.askopenfilename(
                 initialdir=self.default_open_folder,
@@ -185,16 +167,10 @@ class MuText:
                 messagebox.showerror("Error", f"Could not open file:\n{e}")
 
     def confirm_and_open_recent(self, file_path):
-        """
-        Confirm before opening a recent file.
-        """
         if messagebox.askyesno("Confirm", f"Open recent file:\n{file_path}?"):
             self.open_file(file_path=file_path)
 
     def save_file(self, event=None):
-        """
-        Save the current file. If no file path exists, call Save As.
-        """
         if self.current_file:
             try:
                 with open(self.current_file, "w", encoding="utf-8") as file:
@@ -207,9 +183,6 @@ class MuText:
             self.save_as_file()
 
     def save_as_file(self, event=None):
-        """
-        Prompt the user to save the file with a proposed name as the current date.
-        """
         default_filename = datetime.now().strftime("%Y-%m-%d.txt")
         file_path = filedialog.asksaveasfilename(
             initialdir=self.default_open_folder,
@@ -228,9 +201,6 @@ class MuText:
                 messagebox.showerror("Error", f"Could not save file:\n{e}")
 
     def change_open_folder(self):
-        """
-        Change the default folder for opening files.
-        """
         folder = filedialog.askdirectory(initialdir=self.default_open_folder)
         if folder:
             self.default_open_folder = folder
@@ -238,17 +208,11 @@ class MuText:
             self.save_config()
 
     def toggle_dark_mode(self):
-        """
-        Toggle between light mode and dark mode.
-        """
         self.dark_mode = not self.dark_mode
         self.apply_theme()
         self.save_config()
 
     def apply_theme(self):
-        """
-        Apply the current theme (light or dark) to the editor.
-        """
         if self.dark_mode:
             self.text_area.config(bg="#111212", fg="white", insertbackground="white")
         else:
@@ -285,17 +249,11 @@ class MuText:
         webbrowser.open(f"http://localhost:{self.live_preview_port}")
 
     def exit_editor(self):
-        """
-        Exit the editor, saving the config and confirming with the user.
-        """
         if messagebox.askokcancel("Exit", "Are you sure you want to exit?"):
             self.save_config()
             self.root.destroy()
 
     def show_about(self):
-        """
-        Show info about the application.
-        """
         messagebox.showinfo(
             "About",
             "MuText - HTML Editor with KaTeX Support\n"
@@ -326,3 +284,4 @@ if __name__ == "__main__":
     editor = MuText(root)
     root.attributes("-fullscreen", True)
     root.mainloop()
+
