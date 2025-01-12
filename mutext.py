@@ -7,6 +7,7 @@ import threading
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
+import tkinter.font as tkfont
 
 
 class MuText:
@@ -33,6 +34,7 @@ class MuText:
         self.config_file_path = os.path.join(script_dir, self.CONFIG_NAME)
 
         # Default settings
+        self.current_font = "Times New Roman"
         self.font_size = 24
         self.default_open_folder = "./"
         self.current_file = None
@@ -40,8 +42,8 @@ class MuText:
         self.server_thread = None
         self.live_preview_port = 8000
         self.dark_mode = False  # Dark mode is off by default
-        self.autosave_enabled = False
-        self.autosave_interval = 60  # Autosave every 60 seconds
+        self.autosave_enabled = True
+        self.autosave_interval = 5  # Autosave every 60 seconds
         self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
 
@@ -53,11 +55,14 @@ class MuText:
             self.root,
             wrap="word",
             undo=True,
-            font=("Courier New", self.font_size),
+            font=(self.current_font, self.font_size),
             insertwidth=4,
-            tabs=("1c",)  # Single tuple for tab size
+            tabs=("1c",),  # Single tuple for tab size
+            bd=0,  # Remove border
+            highlightthickness=0  # Remove focus highlight border
         )
-        self.text_area.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.text_area.pack(fill="both", expand=True, padx=0, pady=0)
         self.text_area.configure(insertofftime=0)  # Prevent cursor blinking
         self.apply_theme()
 
@@ -118,6 +123,14 @@ class MuText:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         help_menu.add_command(label="About", command=self.show_about)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
+
+        # Add Font menu
+        font_menu = tk.Menu(self.menu_bar, tearoff=0)
+        font_menu.add_command(label="Choose Font", command=self.choose_font)
+        self.menu_bar.add_cascade(label="Font", menu=font_menu) 
+
+        
+        self.text_area.config(font=(self.current_font, self.font_size))
 
         # Start autosave if enabled
         if self.autosave_enabled:
@@ -346,16 +359,57 @@ class MuText:
 
     def increase_font_size(self, event=None):
         self.font_size += 2
-        self.text_area.config(font=("Courier New", self.font_size))
+        self.text_area.config(font=(self.current_font, self.font_size))
 
     def decrease_font_size(self, event=None):
         if self.font_size > 6:
             self.font_size -= 2
-            self.text_area.config(font=("Courier New", self.font_size))
+            self.text_area.config(font=(self.current_font, self.font_size))
 
     def reset_font_size(self, event=None):
         self.font_size = 16
-        self.text_area.config(font=("Courier New", self.font_size))
+        self.text_area.config(font=(self.current_font, self.font_size))
+
+    def choose_font(self):
+        """
+        Open a font selection window where users can preview and select a font.
+        """
+        def preview_font(event):
+            # Get the selected font from the listbox and update the preview label
+            selected_font = font_listbox.get(font_listbox.curselection())
+            preview_label.config(text=f"Preview: {selected_font}", font=(selected_font, 16))
+
+        def apply_font():
+            # Set the selected font as the current font and apply it to the text area
+            self.current_font = font_listbox.get(font_listbox.curselection())
+            self.text_area.config(font=(self.current_font, self.font_size))
+            font_window.destroy()
+
+        # Create the font selection window
+        font_window = tk.Toplevel(self.root)
+        font_window.title("Choose Font")
+        font_window.geometry("400x300")
+
+        # Listbox to display fonts
+        fonts = sorted(tkfont.families())
+        font_listbox = tk.Listbox(font_window, height=15, exportselection=False)
+        for font in fonts:
+            font_listbox.insert(tk.END, font)
+        font_listbox.pack(fill="both", expand=True, padx=10, pady=10)
+        font_listbox.bind("<<ListboxSelect>>", preview_font)
+
+        # Preview label to show selected font
+        preview_label = tk.Label(font_window, text=f"Preview: {self.current_font}", font=(self.current_font, 16))
+        preview_label.pack(pady=10)
+
+        # Buttons to apply or close the font selection window
+        button_frame = tk.Frame(font_window)
+        button_frame.pack(pady=10)
+        apply_button = tk.Button(button_frame, text="Apply Font", command=apply_font)
+        apply_button.pack(side=tk.LEFT, padx=5)
+        close_button = tk.Button(button_frame, text="Close", command=font_window.destroy)
+        close_button.pack(side=tk.LEFT, padx=5)
+
 
 
 if __name__ == "__main__":
