@@ -58,7 +58,7 @@ class MuText:
             font=(self.current_font, self.font_size),
             insertwidth=4,
             tabs=("1c",),  # Single tuple for tab size
-            bd=0,  # Remove border
+            bd=5,  # Remove border
             highlightthickness=0  # Remove focus highlight border
         )
 
@@ -142,16 +142,12 @@ class MuText:
                 with open(self.config_file_path, "r") as config_file:
                     config = json.load(config_file)
                     self.default_open_folder = config.get("default_open_folder", "./")
-                    self.recent_files = config.get("recent_files", [])
-                    self.dark_mode = config.get("dark_mode", False)
-                    self.autosave_enabled = config.get("autosave_enabled", False)
-                    self.autosave_interval = config.get("autosave_interval", 60)
+                    self.recent_files = config.get("recent_files", self.recent_files)
+                    self.dark_mode = config.get("dark_mode", self.dark_mode)
+                    self.autosave_enabled = config.get("autosave_enabled", self.autosave_enabled)
+                    self.autosave_interval = config.get("autosave_interval", self.autosave_interval)
             except json.JSONDecodeError:
-                self.default_open_folder = "./"
-                self.recent_files = []
-                self.dark_mode = False
-                self.autosave_enabled = False
-                self.autosave_interval = 60
+                pass
         else:
             self.save_config()
 
@@ -326,11 +322,12 @@ class MuText:
             server.editor_instance = self
             server.serve_forever()
 
-        if not self.server_thread or not self.server_thread.is_alive():
-            self.server_thread = threading.Thread(target=start_server, daemon=True)
-            self.server_thread.start()
+        if messagebox.askyesno("Confirm Preview", "Do you want to preview the HTML in your browser?"):
+            if not self.server_thread or not self.server_thread.is_alive():
+                self.server_thread = threading.Thread(target=start_server, daemon=True)
+                self.server_thread.start()
 
-        webbrowser.open(f"http://localhost:{self.live_preview_port}")
+            webbrowser.open(f"http://localhost:{self.live_preview_port}")
 
     def exit_editor(self):
             if self.unsaved_changes:
