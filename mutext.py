@@ -8,6 +8,13 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 import tkinter.font as tkfont
+from tkhtmlview import HTMLLabel
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWidgets import QShortcut
+from PyQt5.QtGui import QKeySequence
+
+import sys
 
 
 class MuText:
@@ -46,6 +53,7 @@ class MuText:
         self.autosave_interval = 5  # Autosave every 60 seconds
         self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
+        self.qt_preview_window = None
 
         # Load settings from config file
         self.load_config()
@@ -58,8 +66,8 @@ class MuText:
             font=(self.current_font, self.font_size),
             insertwidth=4,
             tabs=("1c",),  # Single tuple for tab size
-            bd=0,  # Remove border
-            highlightthickness=0  # Remove focus highlight border
+            #bd=0,  # Remove border
+            #highlightthickness=0  # Remove focus highlight border
         )
 
         self.text_area.pack(fill="both", expand=True, padx=0, pady=0)
@@ -73,13 +81,16 @@ class MuText:
         self.text_area.bind_all("<Command-o>", self.open_file)
         self.text_area.bind_all("<Command-s>", self.save_file)
         self.text_area.bind_all("<Command-Shift-S>", self.save_as_file)
-        self.text_area.bind_all("<Command-r>", self.render_html)
+        #self.text_area.bind_all("<Command-r>", self.render_html)
         self.text_area.bind_all("<Command-minus>", self.decrease_font_size)
         self.text_area.bind_all("<Command-+>", self.increase_font_size)
         self.text_area.bind_all("<Command-equal>", self.increase_font_size)  # For Cmd+=
         self.text_area.bind_all("<Command-0>", self.reset_font_size)
         self.text_area.bind_all("<Command-n>", self.new_file)
         self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
+        self.text_area.bind_all("<Command-r>", self.render_html)
+        self.text_area.bind_all("<Command-Shift-R>", self.render_html_external)
+
 
         # Create menu bar
         self.menu_bar = tk.Menu(self.root)
@@ -302,35 +313,125 @@ class MuText:
         else:
             self.text_area.config(bg="white", fg="black", insertbackground="black")
 
+
     def render_html(self, event=None):
         """
-        Render the current text in a local web server with KaTeX support, then open it in a browser.
+        Toggle the rendering of the current text in a local HTML preview window with KaTeX support using PyQt5.
         """
-        class LivePreviewHandler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                html_content = self.server.editor_instance.text_area.get(1.0, tk.END)
-                katex_head = """
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css">
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
-                        onload="renderMathInElement(document.body);"></script>
+        if hasattr(self, "qt_preview_window") and self.qt_preview_window is not None:
+            if self.qt_preview_window.isVisible():
+                self.qt_preview_window.close()  # Close the preview window
+                self.qt_preview_window = None  # Clear the reference
+                return
+
+        # Retrieve the HTML content from the text area
+        html_content = self.text_area.get(1.0, tk.END)
+        katex_head = """
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css">
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
+                onload="renderMathInElement(document.body);"></script>
+        """
+        full_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            {katex_head}
+        </head>
+        <body style="margin: 0; padding: 0;">
+            {html_content}
+            <script>
+                // Ensure KaTeX rendering is applied to dynamic content
+                renderMathInElement(document.body);
+            </script>
+        </body>
+        </html>
+        """
+        
+        if not hasattr(self, "qt_app") or self.qt_app is None:
+            self.qt_app = QApplication(sys.argv)
+
+        # Create the preview window and display the HTML content
+        self.qt_preview_window = self.create_preview_window(full_html)
+        self.qt_preview_window.show()
+
+    def create_preview_window(self, html):
+        """
+        Create and return a new PyQt5 preview window.
+        """
+        class PreviewWindow(QMainWindow):
+            def __init__(self, html, parent):
+                super().__init__()
+                self.setWindowTitle("HTML Preview")
+                self.resize(800, 600)
+                self.parent = parent  # Reference to the parent Tkinter app
+
+                # Set up a QWebEngineView
+                self.browser = QWebEngineView(self)
+                self.browser.setHtml(html)
+
+                # Remove window margins/padding
+                self.setContentsMargins(0, 0, 0, 0)
+                self.browser.setContentsMargins(0, 0, 0, 0)
+
+                # Set up the layout
+                container = QWidget(self)
+                layout = QVBoxLayout(container)
+                layout.setContentsMargins(0, 0, 0, 0)  # Remove padding in the layout
+                layout.setSpacing(0)  # Remove spacing between widgets
+                layout.addWidget(self.browser)
+                container.setLayout(layout)
+                self.setCentralWidget(container)
+
+                # Add a global shortcut for Command+R (or Ctrl+R)
+                toggle_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)  # Use "Ctrl+R" for cross-platform compatibility
+                toggle_shortcut.activated.connect(self.close_preview)
+
+            def closeEvent(self, event):
                 """
-                full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
-                self.wfile.write(full_html.encode("utf-8"))
+                Override the close event to notify the parent and reset the reference.
+                """
+                self.parent.qt_preview_window = None
+                super().closeEvent(event)
 
-        def start_server():
-            server = HTTPServer(("localhost", self.live_preview_port), LivePreviewHandler)
-            server.editor_instance = self
-            server.serve_forever()
+            def close_preview(self):
+                """
+                Close the preview window and notify the parent.
+                """
+                self.close()
 
-        if not self.server_thread or not self.server_thread.is_alive():
-            self.server_thread = threading.Thread(target=start_server, daemon=True)
-            self.server_thread.start()
+        return PreviewWindow(html, self)
 
-        webbrowser.open(f"http://localhost:{self.live_preview_port}")
+
+    def render_html_external(self, event=None):
+        """
+        Render the current HTML in the default web browser after confirmation.
+        """
+        html_content = self.text_area.get(1.0, tk.END)
+        katex_head = """
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css" crossorigin="anonymous">
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js" crossorigin="anonymous"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script>
+        """
+        full_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{katex_head}</head>
+        <body>{html_content}</body>
+        </html>
+        """
+
+        if messagebox.askyesno("Confirm", "Render this HTML in an external browser?"):
+            try:
+                # Save HTML to a temporary file
+                temp_file_path = os.path.join(os.getenv("TEMP", "/tmp"), "rendered_preview.html")
+                with open(temp_file_path, "w", encoding="utf-8") as temp_file:
+                    temp_file.write(full_html)
+                # Open in the default browser
+                webbrowser.open(f"file://{temp_file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not render in browser:\n{e}")
+
 
     def exit_editor(self):
             if self.unsaved_changes:
