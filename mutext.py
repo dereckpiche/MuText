@@ -46,6 +46,7 @@ class MuText:
         self.autosave_interval = 5  # Autosave every 60 seconds
         self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
+        self.buffer_content = []  # Initialize buffer for unsaved file content
 
         # Load settings from config file
         self.load_config()
@@ -127,9 +128,11 @@ class MuText:
         # Add Font menu
         font_menu = tk.Menu(self.menu_bar, tearoff=0)
         font_menu.add_command(label="Choose Font", command=self.choose_font)
-        self.menu_bar.add_cascade(label="Font", menu=font_menu) 
+        self.menu_bar.add_cascade(label="Font", menu=font_menu)
 
-        
+        # Buffer menu
+        self.create_buffer_menu()
+
         self.text_area.config(font=(self.current_font, self.font_size))
 
         # Start autosave if enabled
@@ -237,6 +240,9 @@ class MuText:
         self.save_config()
 
     def new_file(self, event=None):
+        # Save current text to buffer before clearing
+        if not self.current_file:
+            self.buffer_content.append(self.text_area.get(1.0, tk.END))
         self.text_area.delete(1.0, tk.END)
         self.current_file = None
         self.root.title("New File - MuText")
@@ -415,6 +421,53 @@ class MuText:
         close_button = tk.Button(button_frame, text="Close", command=font_window.destroy)
         close_button.pack(side=tk.LEFT, padx=5)
 
+    def clear_buffer(self):
+        """Clear the buffer content."""
+        self.buffer_content.clear()
+        messagebox.showinfo("Buffer Cleared", "The buffer content has been cleared.")
+
+    def load_from_buffer(self):
+        """Load content from buffer into the text area."""
+        if not self.buffer_content:
+            messagebox.showinfo("No Buffer Content", "There is no content in the buffer.")
+            return
+
+        def load_selected_buffer():
+            selected_index = buffer_listbox.curselection()
+            if selected_index:
+                self.text_area.delete(1.0, tk.END)
+                self.text_area.insert(1.0, self.buffer_content[selected_index[0]])
+                buffer_window.destroy()
+
+        def show_preview(event):
+            selected_index = buffer_listbox.curselection()
+            if selected_index:
+                preview_text.delete(1.0, tk.END)
+                preview_text.insert(1.0, self.buffer_content[selected_index[0]])
+
+        # Create a window to select buffer content
+        buffer_window = tk.Toplevel(self.root)
+        buffer_window.title("Select Buffer Content")
+        buffer_window.geometry("600x400")
+
+        buffer_listbox = tk.Listbox(buffer_window, height=15)
+        for i, content in enumerate(self.buffer_content):
+            buffer_listbox.insert(tk.END, f"Buffer {i+1}")
+        buffer_listbox.pack(side=tk.LEFT, fill="y", padx=10, pady=10)
+        buffer_listbox.bind("<<ListboxSelect>>", show_preview)
+
+        preview_text = tk.Text(buffer_window, wrap="word", height=15, width=40)
+        preview_text.pack(side=tk.RIGHT, fill="both", expand=True, padx=10, pady=10)
+
+        load_button = tk.Button(buffer_window, text="Load Selected", command=load_selected_buffer)
+        load_button.pack(pady=10)
+
+    def create_buffer_menu(self):
+        """Create a menu for buffer operations."""
+        buffer_menu = tk.Menu(self.menu_bar, tearoff=0)
+        buffer_menu.add_command(label="Clear Buffer", command=self.clear_buffer)
+        buffer_menu.add_command(label="Load from Buffer", command=self.load_from_buffer)
+        self.menu_bar.add_cascade(label="Buffer", menu=buffer_menu)
 
 
 if __name__ == "__main__":
