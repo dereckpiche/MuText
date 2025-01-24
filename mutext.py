@@ -56,7 +56,7 @@ class MuText:
             wrap="word",
             undo=True,
             font=(self.current_font, self.font_size),
-            insertwidth=4,
+            insertwidth=1,
             tabs=("1c",),  # Single tuple for tab size
             bd=5,  # Remove border
             highlightthickness=0  # Remove focus highlight border
@@ -201,10 +201,22 @@ class MuText:
 
     def exit_editor(self):
         if self.unsaved_changes:
-            if not messagebox.askyesno("Unsaved Changes", "You have unsaved changes. Do you want to exit without saving?"):
+            choice = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save them before exiting?"
+            )
+            if choice:  # Yes, save changes
+                self.save_file()
+                self.stop_server()  # Stop the server
+                self.root.destroy()
+            elif choice is None:  # Cancel
                 return
-        self.save_config()
+        self.stop_server()  # Stop the server
         self.root.destroy()
+
+    def stop_server(self):
+        if self.server_thread and self.server_thread.is_alive():
+            HTTPServer(("localhost", self.live_preview_port)).server_close()
 
     def update_recent_files_menu(self):
         self.recent_files_menu.delete(0, tk.END)
@@ -313,6 +325,16 @@ class MuText:
                 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
                 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
                         onload="renderMathInElement(document.body);"></script>
+                <script>
+                setInterval(() => {
+                    fetch(window.location.href)
+                        .then(response => response.text())
+                        .then(html => {
+                            document.body.innerHTML = html;
+                            renderMathInElement(document.body);
+                        });
+                }, 10000);  // Refresh every second
+                </script>
                 """
                 full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
                 self.wfile.write(full_html.encode("utf-8"))
@@ -322,25 +344,11 @@ class MuText:
             server.editor_instance = self
             server.serve_forever()
 
-        if messagebox.askyesno("Confirm Preview", "Do you want to preview the HTML in your browser?"):
-            if not self.server_thread or not self.server_thread.is_alive():
-                self.server_thread = threading.Thread(target=start_server, daemon=True)
-                self.server_thread.start()
+        if not self.server_thread or not self.server_thread.is_alive():
+            self.server_thread = threading.Thread(target=start_server, daemon=True)
+            self.server_thread.start()
 
-            webbrowser.open(f"http://localhost:{self.live_preview_port}")
-
-    def exit_editor(self):
-            if self.unsaved_changes:
-                choice = messagebox.askyesnocancel(
-                    "Unsaved Changes",
-                    "You have unsaved changes. Do you want to save them before exiting?"
-                )
-                if choice:  # Yes, save changes
-                    self.save_file()
-                    self.root.destroy()
-                elif choice is None:  # Cancel
-                    return
-            self.root.destroy()
+        webbrowser.open_new(f"http://localhost:{self.live_preview_port}")
 
     def show_about(self):
         messagebox.showinfo(
