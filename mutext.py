@@ -65,7 +65,7 @@ class MuText:
             wrap="word",
             undo=True,
             font=(self.current_font, self.font_size),
-            insertwidth=7,
+            insertwidth=1,
             tabs=("1c",),  # Single tuple for tab size
             bd=20,  # Remove border
             highlightthickness=0  # Remove focus highlight border
