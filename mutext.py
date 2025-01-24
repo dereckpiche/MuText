@@ -8,6 +8,7 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 import tkinter.font as tkfont
+import subprocess
 
 
 class MuText:
@@ -47,6 +48,13 @@ class MuText:
         self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
         self.buffer_content = []  # Initialize buffer for unsaved file content
+        self.quick_folders = []  # List to store quick access folders
+
+        # Create menu bar
+        self.menu_bar = tk.Menu(self.root)
+        self.root.config(menu=self.menu_bar)
+
+        
 
         # Load settings from config file
         self.load_config()
@@ -86,10 +94,6 @@ class MuText:
         self.text_area.bind_all("<Command-d>", self.delete_line)  # New shortcut for deleting a line
         self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
 
-        # Create menu bar
-        self.menu_bar = tk.Menu(self.root)
-        self.root.config(menu=self.menu_bar)
-
         # File menu
         file_menu = tk.Menu(self.menu_bar, tearoff=0)
         file_menu.add_command(label="New", command=self.new_file, accelerator="Command+N")
@@ -118,6 +122,13 @@ class MuText:
         autosave_menu.add_command(label="Disable Autosave", command=self.disable_autosave)
         autosave_menu.add_command(label="Set Autosave Interval", command=self.set_autosave_interval)
         self.menu_bar.add_cascade(label="Autosave", menu=autosave_menu)
+
+        # Folders menu
+        self.folders_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.folders_menu.add_command(label="Add Folder", command=self.add_quick_folder)
+        self.folders_menu.add_command(label="Remove Folder", command=self.remove_quick_folder)
+        self.update_folders_menu()
+        self.menu_bar.add_cascade(label="Folders", menu=self.folders_menu)
 
         # Render menu
         render_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -153,6 +164,7 @@ class MuText:
                     self.dark_mode = config.get("dark_mode", self.dark_mode)
                     self.autosave_enabled = config.get("autosave_enabled", self.autosave_enabled)
                     self.autosave_interval = config.get("autosave_interval", self.autosave_interval)
+                    self.quick_folders = config.get("quick_folders", [])  # Ensure it's a list
             except json.JSONDecodeError:
                 pass
         else:
@@ -165,6 +177,7 @@ class MuText:
             "dark_mode": self.dark_mode,
             "autosave_enabled": self.autosave_enabled,
             "autosave_interval": self.autosave_interval,
+            "quick_folders": self.quick_folders,  # Save quick folders as a list
         }
         with open(self.config_file_path, "w") as config_file:
             json.dump(config, config_file)
@@ -480,6 +493,50 @@ class MuText:
         current_line = self.text_area.index("insert linestart")
         next_line = self.text_area.index("insert lineend +1c")
         self.text_area.delete(current_line, next_line)
+
+    def add_quick_folder(self):
+        """Add a folder to the quick access list."""
+        folder = filedialog.askdirectory(initialdir=self.default_open_folder)
+        if folder and folder not in self.quick_folders:
+            self.quick_folders.append(folder)
+            self.update_folders_menu()
+            self.save_config()
+            messagebox.showinfo("Folder Added", f"Folder added to quick access:\n{folder}")
+        else:
+            messagebox.showwarning("No Folder Selected", "No folder was selected or it already exists.")
+
+    def remove_quick_folder(self):
+        """Remove a folder from the quick access list."""
+        folder = simpledialog.askstring("Folder", "Enter the folder path to remove:")
+        if folder in self.quick_folders:
+            self.quick_folders.remove(folder)
+            self.update_folders_menu()
+            self.save_config()
+            messagebox.showinfo("Folder Removed", f"Folder removed from quick access:\n{folder}")
+        else:
+            messagebox.showwarning("Folder Not Found", "The folder was not found in the quick access list.")
+
+    def update_folders_menu(self):
+        """Update the folders menu with quick access folders."""
+        # Clear existing folder entries
+        menu_length = self.folders_menu.index(tk.END)
+        if menu_length is not None and menu_length >= 2:
+            self.folders_menu.delete(2, tk.END)  # Keep the "Add Folder" and "Remove Folder" options
+
+        for folder in self.quick_folders:
+            self.folders_menu.add_command(
+                label=folder,
+                command=lambda f=folder: self.open_file_from_folder(f)
+            )
+
+    def open_file_from_folder(self, folder_path):
+        """Open a file from the specified folder."""
+        file_path = filedialog.askopenfilename(
+            initialdir=folder_path,
+            filetypes=[("Text Files", "*.txt"), ("HTML Files", "*.html"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.open_file(file_path=file_path)
 
 
 if __name__ == "__main__":
