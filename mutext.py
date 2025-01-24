@@ -57,11 +57,14 @@ class MuText:
             wrap="word",
             undo=True,
             font=(self.current_font, self.font_size),
-            insertwidth=1,
+            insertwidth=7,
             tabs=("1c",),  # Single tuple for tab size
-            bd=5,  # Remove border
+            bd=20,  # Remove border
             highlightthickness=0  # Remove focus highlight border
         )
+        
+        # Set selection colors
+        self.text_area.tag_configure("sel", background="#d3d3d3", foreground="black")
 
         self.text_area.pack(fill="both", expand=True, padx=0, pady=0)
         self.text_area.configure(insertofftime=0)  # Prevent cursor blinking
@@ -80,6 +83,7 @@ class MuText:
         self.text_area.bind_all("<Command-equal>", self.increase_font_size)  # For Cmd+=
         self.text_area.bind_all("<Command-0>", self.reset_font_size)
         self.text_area.bind_all("<Command-n>", self.new_file)
+        self.text_area.bind_all("<Command-d>", self.delete_line)  # New shortcut for deleting a line
         self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
 
         # Create menu bar
@@ -317,9 +321,10 @@ class MuText:
             self.text_area.config(bg="white", fg="black", insertbackground="black")
 
     def render_html(self, event=None):
-        """
-        Render the current text in a local web server with KaTeX support, then open it in a browser.
-        """
+        """Render the current text in a local web server with KaTeX support, then open it in a browser."""
+        if not messagebox.askyesno("Confirm Render", "Are you sure you want to render the HTML?"):
+            return
+
         class LivePreviewHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 self.send_response(200)
@@ -339,7 +344,7 @@ class MuText:
                             document.body.innerHTML = html;
                             renderMathInElement(document.body);
                         });
-                }, 10000);  // Refresh every second
+                }, 4000);  // Refresh automatically
                 </script>
                 """
                 full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
@@ -369,7 +374,7 @@ class MuText:
         )
 
     def increase_font_size(self, event=None):
-        self.font_size += 2
+        self.font_size += 4
         self.text_area.config(font=(self.current_font, self.font_size))
 
     def decrease_font_size(self, event=None):
@@ -422,9 +427,10 @@ class MuText:
         close_button.pack(side=tk.LEFT, padx=5)
 
     def clear_buffer(self):
-        """Clear the buffer content."""
-        self.buffer_content.clear()
-        messagebox.showinfo("Buffer Cleared", "The buffer content has been cleared.")
+        """Clear the buffer content with confirmation."""
+        if messagebox.askyesno("Confirm Clear Buffer", "Are you sure you want to clear the buffer?"):
+            self.buffer_content.clear()
+            messagebox.showinfo("Buffer Cleared", "The buffer content has been cleared.")
 
     def load_from_buffer(self):
         """Load content from buffer into the text area."""
@@ -468,6 +474,12 @@ class MuText:
         buffer_menu.add_command(label="Clear Buffer", command=self.clear_buffer)
         buffer_menu.add_command(label="Load from Buffer", command=self.load_from_buffer)
         self.menu_bar.add_cascade(label="Buffer", menu=buffer_menu)
+
+    def delete_line(self, event=None):
+        """Delete the current line."""
+        current_line = self.text_area.index("insert linestart")
+        next_line = self.text_area.index("insert lineend +1c")
+        self.text_area.delete(current_line, next_line)
 
 
 if __name__ == "__main__":
