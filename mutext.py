@@ -8,6 +8,25 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 import tkinter.font as tkfont
+import webview  # ← third-party module, install with: pip install pywebview
+import socket   # <-- Added to catch socket errors
+import multiprocessing
+
+
+def show_html_in_webview(html_str):
+    """
+    Runs in a separate Python process, so it has its own event loop
+    and won't conflict with Tkinter on macOS. We also use 'on_top=True'
+    to bring the window in front of the editor.
+    """
+    webview.create_window(
+        "MuText Preview",
+        html=html_str,
+        width=800,
+        height=600,
+        on_top=True  # Force the WebView to appear on top
+    )
+    webview.start()
 
 
 class MuText:
@@ -43,7 +62,7 @@ class MuText:
         self.live_preview_port = 8000
         self.dark_mode = False  # Dark mode is off by default
         self.autosave_enabled = True
-        self.autosave_interval = 5  # Autosave every 60 seconds
+        self.autosave_interval = 5
         self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
 
@@ -57,11 +76,10 @@ class MuText:
             undo=True,
             font=(self.current_font, self.font_size),
             insertwidth=4,
-            tabs=("1c",),  # Single tuple for tab size
-            bd=5,  # Remove border
-            highlightthickness=0  # Remove focus highlight border
+            tabs=("1c",),
+            bd=5,
+            highlightthickness=0
         )
-
         self.text_area.pack(fill="both", expand=True, padx=0, pady=0)
         self.text_area.configure(insertofftime=0)  # Prevent cursor blinking
         self.apply_theme()
@@ -69,14 +87,14 @@ class MuText:
         # Detect unsaved changes
         self.text_area.bind("<Key>", self.mark_unsaved)
 
-        # Bind keyboard shortcuts
+        # Bind keyboard shortcuts — now Command+R calls in‐app preview
         self.text_area.bind_all("<Command-o>", self.open_file)
         self.text_area.bind_all("<Command-s>", self.save_file)
         self.text_area.bind_all("<Command-Shift-S>", self.save_as_file)
-        self.text_area.bind_all("<Command-r>", self.render_html)
+        self.text_area.bind_all("<Command-r>", self.render_html_in_app)  # ← in‐app default
         self.text_area.bind_all("<Command-minus>", self.decrease_font_size)
         self.text_area.bind_all("<Command-+>", self.increase_font_size)
-        self.text_area.bind_all("<Command-equal>", self.increase_font_size)  # For Cmd+=
+        self.text_area.bind_all("<Command-equal>", self.increase_font_size)
         self.text_area.bind_all("<Command-0>", self.reset_font_size)
         self.text_area.bind_all("<Command-n>", self.new_file)
         self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
@@ -116,7 +134,10 @@ class MuText:
 
         # Render menu
         render_menu = tk.Menu(self.menu_bar, tearoff=0)
-        render_menu.add_command(label="Render HTML", command=self.render_html, accelerator="Command+R")
+        # First item: in‐app (default, with accelerator)
+        render_menu.add_command(label="Render HTML (In-App)", command=self.render_html_in_app, accelerator="Command+R")
+        # Second item: external browser (no accelerator)
+        render_menu.add_command(label="Render HTML (Browser)", command=self.render_html)
         self.menu_bar.add_cascade(label="Render", menu=render_menu)
 
         # Help menu
@@ -124,12 +145,11 @@ class MuText:
         help_menu.add_command(label="About", command=self.show_about)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
 
-        # Add Font menu
+        # Font menu
         font_menu = tk.Menu(self.menu_bar, tearoff=0)
         font_menu.add_command(label="Choose Font", command=self.choose_font)
-        self.menu_bar.add_cascade(label="Font", menu=font_menu) 
+        self.menu_bar.add_cascade(label="Font", menu=font_menu)
 
-        
         self.text_area.config(font=(self.current_font, self.font_size))
 
         # Start autosave if enabled
@@ -189,6 +209,7 @@ class MuText:
                 except Exception as e:
                     print(f"Autosave failed: {e}")
             else:
+                # If no file is open, autosave to a temp location
                 try:
                     with open(self.autosave_file_path, "w", encoding="utf-8") as file:
                         file.write(self.text_area.get(1.0, tk.END))
@@ -200,8 +221,22 @@ class MuText:
         self.autosave()
 
     def exit_editor(self):
+        """
+        Be sure to shut down the local server before destroying the root window.
+        """
+        # If server is running, cleanly shut it down
+        if hasattr(self, 'httpd') and self.httpd:
+            try:
+                self.httpd.shutdown()
+                self.httpd.server_close()
+            except:
+                pass
+
         if self.unsaved_changes:
-            if not messagebox.askyesno("Unsaved Changes", "You have unsaved changes. Do you want to exit without saving?"):
+            if not messagebox.askyesno(
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to exit without saving?"
+            ):
                 return
         self.save_config()
         self.root.destroy()
@@ -257,6 +292,7 @@ class MuText:
                     file.write(self.text_area.get(1.0, tk.END))
                 self.root.title(f"{os.path.basename(self.current_file)} - MuText")
                 self.add_to_recent_files(self.current_file)
+                self.unsaved_changes = False
             except Exception as e:
                 messagebox.showerror("Error", f"Could not save file:\n{e}")
         else:
@@ -277,6 +313,7 @@ class MuText:
                 self.current_file = file_path
                 self.root.title(f"{os.path.basename(file_path)} - MuText")
                 self.add_to_recent_files(file_path)
+                self.unsaved_changes = False
             except Exception as e:
                 messagebox.showerror("Error", f"Could not save file:\n{e}")
 
@@ -300,47 +337,65 @@ class MuText:
 
     def render_html(self, event=None):
         """
-        Render the current text in a local web server with KaTeX support, then open it in a browser.
+        Render the current text in a local web server with KaTeX support,
+        then open it in a new *external* browser window.
         """
         class LivePreviewHandler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                html_content = self.server.editor_instance.text_area.get(1.0, tk.END)
-                katex_head = """
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css">
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
-                        onload="renderMathInElement(document.body);"></script>
-                """
-                full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
-                self.wfile.write(full_html.encode("utf-8"))
+            def do_GET(handler_self):
+                try:
+                    handler_self.send_response(200)
+                    handler_self.send_header("Content-type", "text/html")
+                    handler_self.end_headers()
+                    html_content = handler_self.server.editor_instance.text_area.get(1.0, tk.END)
+
+                    # KaTeX resources
+                    katex_head = """
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css">
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
+                            onload="renderMathInElement(document.body);"></script>
+                    """
+                    full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
+                    handler_self.wfile.write(full_html.encode("utf-8"))
+                except (BrokenPipeError, ConnectionResetError, socket.error):
+                    # If the browser tab was closed or reset mid‐transfer,
+                    # just ignore and let the thread continue.
+                    pass
 
         def start_server():
-            server = HTTPServer(("localhost", self.live_preview_port), LivePreviewHandler)
-            server.editor_instance = self
-            server.serve_forever()
+            self.httpd = HTTPServer(("localhost", self.live_preview_port), LivePreviewHandler)
+            self.httpd.editor_instance = self
+            try:
+                self.httpd.serve_forever()
+            except:
+                pass
 
-        if messagebox.askyesno("Confirm Preview", "Do you want to preview the HTML in your browser?"):
-            if not self.server_thread or not self.server_thread.is_alive():
-                self.server_thread = threading.Thread(target=start_server, daemon=True)
-                self.server_thread.start()
+        # If no server thread is running, start it
+        if not self.server_thread or not self.server_thread.is_alive():
+            self.server_thread = threading.Thread(target=start_server, daemon=True)
+            self.server_thread.start()
 
-            webbrowser.open(f"http://localhost:{self.live_preview_port}")
+        # Launch default system browser
+        webbrowser.open(f"http://localhost:{self.live_preview_port}", new=1)
 
-    def exit_editor(self):
-            if self.unsaved_changes:
-                choice = messagebox.askyesnocancel(
-                    "Unsaved Changes",
-                    "You have unsaved changes. Do you want to save them before exiting?"
-                )
-                if choice:  # Yes, save changes
-                    self.save_file()
-                    self.root.destroy()
-                elif choice is None:  # Cancel
-                    return
-            self.root.destroy()
+    def render_html_in_app(self, event=None):
+        """
+        Launch the PyWebView preview in front of the Tkinter editor.
+        This is now the default "local" approach with Command+R.
+        """
+        html_content = self.text_area.get(1.0, tk.END)
+        katex_head = """
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.css">
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/katex.min.js"></script>
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.19/dist/contrib/auto-render.min.js"
+                            onload="renderMathInElement(document.body);"></script>
+                    """
+        full_html = f"<!DOCTYPE html><html><head>{katex_head}</head><body>{html_content}</body></html>"
+        proc = multiprocessing.Process(
+            target=show_html_in_webview,
+            args=(full_html,)
+        )
+        proc.start()
 
     def show_about(self):
         messagebox.showinfo(
@@ -372,22 +427,18 @@ class MuText:
         Open a font selection window where users can preview and select a font.
         """
         def preview_font(event):
-            # Get the selected font from the listbox and update the preview label
             selected_font = font_listbox.get(font_listbox.curselection())
             preview_label.config(text=f"Preview: {selected_font}", font=(selected_font, 16))
 
         def apply_font():
-            # Set the selected font as the current font and apply it to the text area
             self.current_font = font_listbox.get(font_listbox.curselection())
             self.text_area.config(font=(self.current_font, self.font_size))
             font_window.destroy()
 
-        # Create the font selection window
         font_window = tk.Toplevel(self.root)
         font_window.title("Choose Font")
         font_window.geometry("400x300")
 
-        # Listbox to display fonts
         fonts = sorted(tkfont.families())
         font_listbox = tk.Listbox(font_window, height=15, exportselection=False)
         for font in fonts:
@@ -395,11 +446,9 @@ class MuText:
         font_listbox.pack(fill="both", expand=True, padx=10, pady=10)
         font_listbox.bind("<<ListboxSelect>>", preview_font)
 
-        # Preview label to show selected font
         preview_label = tk.Label(font_window, text=f"Preview: {self.current_font}", font=(self.current_font, 16))
         preview_label.pack(pady=10)
 
-        # Buttons to apply or close the font selection window
         button_frame = tk.Frame(font_window)
         button_frame.pack(pady=10)
         apply_button = tk.Button(button_frame, text="Apply Font", command=apply_font)
@@ -408,10 +457,11 @@ class MuText:
         close_button.pack(side=tk.LEFT, padx=5)
 
 
-
 if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")  # On macOS, do this at the top level
     root = tk.Tk()
     editor = MuText(root)
+    # Optional: open in fullscreen if desired
     root.attributes("-fullscreen", True)
     root.mainloop()
 
