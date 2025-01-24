@@ -72,7 +72,7 @@ class MuText:
         )
         
         # Set selection colors
-        self.text_area.tag_configure("sel", background="#d3d3d3", foreground="black")
+        self.text_area.tag_configure("sel", background="#d4eefa", foreground="black")
 
         self.text_area.pack(fill="both", expand=True, padx=0, pady=0)
         self.text_area.configure(insertofftime=0)  # Prevent cursor blinking
