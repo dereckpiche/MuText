@@ -23,16 +23,15 @@ class MuText:
     7) Prompt when closing unsaved files.
     """
 
-    CONFIG_NAME = "config.json"
+    # Determine the directory where the script is located
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+    BUFFER_FILE = os.path.join(SCRIPT_DIR, "buffer.json")
 
     def __init__(self, root):
         self.root = root
         self.root.title("MuText - HTML Editor")
         self.root.geometry("1200x800")
-
-        # Determine the path to store the config file
-        script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        self.config_file_path = os.path.join(script_dir, self.CONFIG_NAME)
 
         # Default settings
         self.current_font = "Times New Roman"
@@ -45,10 +44,13 @@ class MuText:
         self.dark_mode = False  # Dark mode is off by default
         self.autosave_enabled = True
         self.autosave_interval = 5  # Autosave every 60 seconds
-        self.autosave_file_path = os.path.join(script_dir, "autosave.txt")  # Temporary autosave file
+        self.autosave_file_path = os.path.join(self.SCRIPT_DIR, "autosave.txt")  # Temporary autosave file
         self.unsaved_changes = False
         self.buffer_content = []  # Initialize buffer for unsaved file content
         self.quick_folders = []  # List to store quick access folders
+
+        # Load buffer content from file
+        self.load_buffer()
 
         # Create menu bar
         self.menu_bar = tk.Menu(self.root)
@@ -65,7 +67,7 @@ class MuText:
             wrap="word",
             undo=True,
             font=(self.current_font, self.font_size),
-            insertwidth=1,
+            insertwidth=4,
             tabs=("1c",),  # Single tuple for tab size
             bd=20,  # Remove border
             highlightthickness=0  # Remove focus highlight border
@@ -92,6 +94,7 @@ class MuText:
         self.text_area.bind_all("<Command-0>", self.reset_font_size)
         self.text_area.bind_all("<Command-n>", self.new_file)
         self.text_area.bind_all("<Command-d>", self.delete_line)  # New shortcut for deleting a line
+        self.text_area.bind_all("<Command-Delete>", self.delete_entire_line)
         self.root.protocol("WM_DELETE_WINDOW", self.exit_editor)
 
         # File menu
@@ -155,9 +158,9 @@ class MuText:
             self.start_autosave()
 
     def load_config(self):
-        if os.path.exists(self.config_file_path):
+        if os.path.exists(self.CONFIG_FILE):
             try:
-                with open(self.config_file_path, "r") as config_file:
+                with open(self.CONFIG_FILE, "r") as config_file:
                     config = json.load(config_file)
                     self.default_open_folder = config.get("default_open_folder", "./")
                     self.recent_files = config.get("recent_files", self.recent_files)
@@ -179,7 +182,7 @@ class MuText:
             "autosave_interval": self.autosave_interval,
             "quick_folders": self.quick_folders,  # Save quick folders as a list
         }
-        with open(self.config_file_path, "w") as config_file:
+        with open(self.CONFIG_FILE, "w") as config_file:
             json.dump(config, config_file)
 
     def mark_unsaved(self, event=None):
@@ -228,10 +231,12 @@ class MuText:
             if choice:  # Yes, save changes
                 self.save_file()
                 self.stop_server()  # Stop the server
+                self.save_buffer()  # Save buffer content before exiting
                 self.root.destroy()
             elif choice is None:  # Cancel
                 return
         self.stop_server()  # Stop the server
+        self.save_buffer()  # Save buffer content before exiting
         self.root.destroy()
 
     def stop_server(self):
@@ -260,6 +265,7 @@ class MuText:
         # Save current text to buffer before clearing
         if not self.current_file:
             self.buffer_content.append(self.text_area.get(1.0, tk.END))
+            self.save_buffer()  # Save buffer content immediately after adding
         self.text_area.delete(1.0, tk.END)
         self.current_file = None
         self.root.title("New File - MuText")
@@ -439,10 +445,25 @@ class MuText:
         close_button = tk.Button(button_frame, text="Close", command=font_window.destroy)
         close_button.pack(side=tk.LEFT, padx=5)
 
+    def save_buffer(self):
+        """Save buffer content to a file."""
+        with open(self.BUFFER_FILE, "w", encoding="utf-8") as buffer_file:
+            json.dump(self.buffer_content, buffer_file)
+
+    def load_buffer(self):
+        """Load buffer content from a file."""
+        if os.path.exists(self.BUFFER_FILE):
+            try:
+                with open(self.BUFFER_FILE, "r", encoding="utf-8") as buffer_file:
+                    self.buffer_content = json.load(buffer_file)
+            except json.JSONDecodeError:
+                self.buffer_content = []
+
     def clear_buffer(self):
         """Clear the buffer content with confirmation."""
         if messagebox.askyesno("Confirm Clear Buffer", "Are you sure you want to clear the buffer?"):
             self.buffer_content.clear()
+            self.save_buffer()
             messagebox.showinfo("Buffer Cleared", "The buffer content has been cleared.")
 
     def load_from_buffer(self):
@@ -454,8 +475,14 @@ class MuText:
         def load_selected_buffer():
             selected_index = buffer_listbox.curselection()
             if selected_index:
+                # Save current file if it exists
+                if self.current_file:
+                    self.save_file()
+                # Clear text area and load buffer content
                 self.text_area.delete(1.0, tk.END)
                 self.text_area.insert(1.0, self.buffer_content[selected_index[0]])
+                self.current_file = None  # Set to unsaved state
+                self.root.title("Unsaved File - MuText")
                 buffer_window.destroy()
 
         def show_preview(event):
@@ -497,24 +524,50 @@ class MuText:
     def add_quick_folder(self):
         """Add a folder to the quick access list."""
         folder = filedialog.askdirectory(initialdir=self.default_open_folder)
-        if folder and folder not in self.quick_folders:
-            self.quick_folders.append(folder)
-            self.update_folders_menu()
-            self.save_config()
-            messagebox.showinfo("Folder Added", f"Folder added to quick access:\n{folder}")
-        else:
-            messagebox.showwarning("No Folder Selected", "No folder was selected or it already exists.")
+        if folder:
+            custom_name = simpledialog.askstring("Folder Name", "Enter a custom name for the folder:")
+            if custom_name and custom_name not in self.quick_folders:
+                self.quick_folders.append((custom_name, folder))
+                self.update_folders_menu()
+                self.save_config()
+                messagebox.showinfo("Folder Added", f"Folder added to quick access:\n{custom_name}")
+            else:
+                messagebox.showwarning("Invalid Name", "No name was entered or it already exists.")
 
     def remove_quick_folder(self):
         """Remove a folder from the quick access list."""
-        folder = simpledialog.askstring("Folder", "Enter the folder path to remove:")
-        if folder in self.quick_folders:
-            self.quick_folders.remove(folder)
-            self.update_folders_menu()
-            self.save_config()
-            messagebox.showinfo("Folder Removed", f"Folder removed from quick access:\n{folder}")
-        else:
-            messagebox.showwarning("Folder Not Found", "The folder was not found in the quick access list.")
+        if not self.quick_folders:
+            messagebox.showinfo("No Folders", "There are no folders to remove.")
+            return
+
+        def remove_selected_folder():
+            selected_index = folder_listbox.curselection()
+            if selected_index:
+                folder_name, _ = self.quick_folders.pop(selected_index[0])
+                self.update_folders_menu()
+                self.save_config()
+                messagebox.showinfo("Folder Removed", f"Folder removed from quick access:\n{folder_name}")
+                remove_window.destroy()
+
+        # Create a window to select folder to remove
+        remove_window = tk.Toplevel(self.root)
+        remove_window.title("Remove Folder")
+        remove_window.geometry("400x300")
+
+        # Listbox to display folders
+        folder_listbox = tk.Listbox(remove_window, height=15)
+        for i, (name, _) in enumerate(self.quick_folders):
+            folder_listbox.insert(tk.END, name)
+        folder_listbox.pack(fill="both", expand=True, padx=10, pady=10)
+        folder_listbox.bind("<<ListboxSelect>>", remove_selected_folder)
+
+        # Buttons to confirm or cancel
+        button_frame = tk.Frame(remove_window)
+        button_frame.pack(pady=10)
+        confirm_button = tk.Button(button_frame, text="Remove", command=remove_selected_folder)
+        confirm_button.pack(side=tk.LEFT, padx=5)
+        cancel_button = tk.Button(button_frame, text="Cancel", command=remove_window.destroy)
+        cancel_button.pack(side=tk.LEFT, padx=5)
 
     def update_folders_menu(self):
         """Update the folders menu with quick access folders."""
@@ -523,9 +576,9 @@ class MuText:
         if menu_length is not None and menu_length >= 2:
             self.folders_menu.delete(2, tk.END)  # Keep the "Add Folder" and "Remove Folder" options
 
-        for folder in self.quick_folders:
+        for name, folder in self.quick_folders:
             self.folders_menu.add_command(
-                label=folder,
+                label=name,
                 command=lambda f=folder: self.open_file_from_folder(f)
             )
 
@@ -537,6 +590,17 @@ class MuText:
         )
         if file_path:
             self.open_file(file_path=file_path)
+
+    def delete_entire_line(self, event=None):
+        """Delete the entire line where the cursor is located."""
+        # Get the current line number
+        line_index = self.text_area.index("insert").split(".")[0]
+        # Construct the start and end indices for the line
+        start_index = f"{line_index}.0"
+        end_index = f"{line_index}.end+1c"
+        # Delete the line
+        self.text_area.delete(start_index, end_index)
+        return "break"  # Prevent default behavior
 
 
 if __name__ == "__main__":
